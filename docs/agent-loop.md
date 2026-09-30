@@ -12,9 +12,9 @@
 
 主循环解决的问题是：把「一次模型调用」变成「一个能自主完成的任务」——模型说要用工具就去执行工具，把结果喂回去再问模型，直到模型给出最终文本答复。这就是所有 agent 共有的闭环 (loop)，Hermes 的特点是**纯手写、纯同步的 while 循环**，不依赖 LangChain / LangGraph 这类框架。核心分三层：
 
-1. **门面层**：`run_agent.py` 的 `AIAgent` 类，由 14 个 mixin 组装（`run_agent.py:241`，客户端生命周期、流式输出、中断控制、会话持久化等各占一个），构造逻辑全部转发给 `agent/agent_init.py::init_agent`。外部调用只有两个入口：`chat(message) -> str` 拿最终回复文本，`run_conversation(...) -> dict` 拿完整结果（`final_response` + `messages` + 用量统计 + 失败标记）。
-2. **准入层**：`agent/turn_facade.py` 的 `run_conversation` 先拿会话级租约 (lease)——防止多进程同时操作同一会话——再做 relay 运行计量登记，然后转发给主循环。
-3. **主循环层**：`agent/conversation_loop.py::run_conversation` 驱动一个 user turn——注意术语：**turn 是「一轮用户消息到最终答复」的完整过程**，turn 内部包含多次迭代 (iteration)，每次迭代是一次模型调用加可能的工具执行。
+1. **门面层**：整个系统对外就是一个 agent 对象，只有两个入口——要答案就调简单版拿回复文本，要全过程就调完整版拿一个结果字典（最终答复、全部消息、用量和失败标记）。几十万行的内部复杂性全藏在这个门面后面；类内部按主题拆成十几个 mixin 组装（`run_agent.py` 的 `AIAgent`），这是它「god-file 拆成门面 + sibling」的统一模式。
+2. **准入层**：干正事之前先拿这个会话的租约 (lease)——同一会话可能被 CLI、桌面、gateway 多个进程打开，必须互斥，谁拿到 lease 谁跑这一轮，其他的等或直接返回。
+3. **主循环层**：一个 while 循环驱动整个回合。这里有个术语要先分清：**turn 是「一轮用户消息到最终答复」的完整过程**，turn 内部包含多次迭代 (iteration)，每次迭代是一次模型调用加可能的工具执行——下面所有机制都挂在这两级结构上。
 
 一个 turn 的数据流：
 
@@ -64,7 +64,7 @@ flowchart TD
 
 - 用户消息追加进消息历史；
 - **系统 prompt 的复用或重建**（`agent/conversation_loop.py::_restore_or_build_system_prompt`；prompt 里装的是人设、工具使用规范、记忆/技能注入，组装细节见上下文工程篇）：会话 DB 里存着上一个 turn 的系统 prompt，且身份字段没变，就**逐字节复用**；重建只发生在首 turn、model/provider/cwd 身份变化（`_stored_prompt_matches_runtime`）、以及 Bot Chat 能力配置变更的一次性迁移——每次重建都是一次显式的缓存破坏；
-- 创建会话行（刻意排在系统 prompt 之后、压缩之前，源码注释写明这个顺序是为了压缩有行可写）；
+- 创建会话行（顺序有讲究：排在 prompt 定稿之后、压缩之前，这样压缩发生时才有行可写）；
 - turn 起始的 preflight（发起模型调用前的预检）压缩检查：估算请求 token，默认超过有效输入预算（上下文窗口减去输出预留）的 50% 就先压缩再开始，小窗口模型另有下限修正（`agent/context_compressor.py` 的阈值计算）；
 - `pre_llm_call` 插件钩子、持久化。
 
@@ -134,9 +134,9 @@ while (api_call_count < max_iterations and 预算还有剩余) or grace_call 待
 
 工具轮次在 `agent/turn_tool_round.py::run_tool_round`，顺序是：**校验 → 先持久化 → 再执行 → 按序回插**：
 
-1. **校验与整形**：`validate_tool_calls` 先做合法性校验，随后 `run_tool_round` 里接 `_deduplicate_tool_calls` 去重、`_cap_delegate_task_calls` 限制单批 delegate 数量；非法工具名不整批丢弃而是逐个回错误 result（混合批次里 assistant 消息保留全部 call，每个 call 必须有配对的 tool result，这是 OpenAI 协议的要求）。
+1. **校验与整形**：先做合法性校验，去重、限制单批派发的子任务数量；非法工具名不整批丢弃而是逐个回错误 result——每个 call 必须有配对的 tool result，这是 OpenAI 协议的硬要求（实现都在 `agent/turn_tool_round.py` 的 `run_tool_round` 开头）。
 2. **先持久化再执行**：把 assistant 的 tool_call 消息写进会话 DB，**然后**才执行工具。这是「先持久化、后执行」的不变量——为的是崩溃后的持久性 (durability)：工具可能有副作用（写文件、发消息），崩溃重启后 resume 必须能看到「已经执行了什么」，否则会重复执行。持久化失败直接结束 turn，绝不从内存状态跑工具。
-3. **执行**：入口 `run_agent.py` 的 `_execute_tool_calls` 按调用数分流——单工具主线程顺序执行；多工具交给 `agent/tool_dispatch_helpers.py::_plan_tool_batch_segments` 分段，能并行的段进 daemon 线程池（`execute_tool_calls_concurrent`），不能并行的段做屏障 (barrier) 顺序执行，分段规则见下面追问。危险操作（命令执行类）在这一步挂起等人审批，见安全篇。工具失败的处置分两条路：注册表工具、memory/context-engine 插件工具以及整个并发路径，异常就地转成错误 result 回给模型，批次继续；内联 agent 级工具和 `delegate_task` 的异常会向上抛，由外层兜底（`turn_loop_errors.py`）给未应答的 tool_call 回填错误 result 并重试该迭代——排在后面的同批调用不再执行。
+3. **执行**：按调用数分流——单个工具就在主线程顺序跑；多个工具先做分段规划，能并行的段进 daemon 线程池，不能并行的段做屏障 (barrier) 顺序执行，分段规则见下面追问（分流和规划在 `run_agent.py::_execute_tool_calls` → `tool_dispatch_helpers.py::_plan_tool_batch_segments`）。危险操作（命令执行类）在这一步挂起等人审批，见安全篇。工具失败的处置分两条路：注册表工具、memory/context-engine 插件工具以及整个并发路径，异常就地转成错误 result 回给模型，批次继续；内联 agent 级工具和 `delegate_task` 的异常会向上抛，由外层兜底给未应答的 tool_call 回填错误 result 并重试该迭代——排在后面的同批调用不再执行（`turn_loop_errors.py`）。
 4. **回插与收尾**：结果按**原始调用顺序**追加为 tool 消息（并发完成的先后不影响顺序），然后视上下文压力做 post-tool 压缩，回到循环顶部开始下一迭代。
 
 ### 追问：一批工具调用里，哪些能并行、哪些必须串行？
@@ -189,7 +189,7 @@ while (api_call_count < max_iterations and 预算还有剩余) or grace_call 待
 
 错误处理分**内层重试循环**（`conversation_loop.py::_run_api_retry_loop`：限流守卫 → 构建请求 → 调用 → 响应检查，异常进 `turn_api_error.py::handle_api_error`）和**外层异常兜底**（`turn_loop_errors.py::handle_outer_loop_error`）两级：
 
-- 内层按错误类别处置，去留由错误分类器的 `should_rotate_credential` / `should_fallback` / `retryable` 标志决定（`agent/error_classifier.py`）：429/5xx 退避重试；401/403 和计费耗尽（402）先做凭证池轮换再走 fallback；内容政策拦截不轮换凭证、只试一次配置好的 fallback；上下文超限 (overflow) 触发就地压缩后重发。这些路都走完仍失败，以结构化的 `failure_reason` / `failure_retryable` 字段结束 turn，让 UI 决定要不要显示重试按钮。
+- 内层按错误类别处置，每类错误带着三个去留判断——要不要换凭证、要不要换 provider、还能不能重试（错误分类器打的标志，`agent/error_classifier.py`）：429/5xx 退避重试；401/403 和计费耗尽先换凭证再换 provider；内容政策拦截不换凭证、只试一次配置好的 fallback；上下文超限 (overflow) 触发就地压缩后重发。这些路都走完仍失败，以结构化的失败原因加可重试标记结束 turn，让 UI 决定要不要显示重试按钮。
 - **fallback 链**：主模型反复失败后按配置切换备用 provider，成功后**会话继续在 fallback 上跑**。切换通过 `restart_with_rebuilt_messages` 标志走 Q3 说的 restart 流程——重建请求（含按新 provider 重打缓存标记）、退预算、清零重试计数。
 - 外层兜底有硬上限：一个 turn 最多 8 次逃逸异常（`_MAX_OUTER_LOOP_ERRORS`）就放弃。还有一个聪明的细节：异常栈里只有本地处理模块、没有任何 API 调用模块的，判定为确定性本地 bug，不浪费重试（`_LOCAL_PROCESSING_MODULES`）。
 
