@@ -90,7 +90,7 @@
 ### 错误恢复（turn_api_error.py:52）
 - 内层重试循环：nous 限流 guard → build → call → check；异常 → handle_api_error。
 - **跨会话限流记忆是 Nous Portal 限定**（第一轮审核核实）：共享文件机制只在 provider == "nous" 时检查（turn_api_call.py:241-290；nous_rate_guard.py 模块头自述）；其他 provider 走凭证池/降级链。
-- 错误分类器输出：reason / retryable / should_compress / should_rotate_credential / should_fallback。
+- 错误分类器输出：reason / retryable / should_compress / should_rotate_credential / should_fallback。换 key 机制（credential_pool.py「持久化的同服务商多凭证池」）：同一 provider 配多把 API key，当前 key 出问题（429 限流、402 欠费、401/403 鉴权、模型没权限）就换池里下一把，坏 key 标记冷却/耗尽。判定表（error_classifier.py:455-468）：billing=不重试+换key+换服务商；rate_limit=退避重试+换key+换服务商；auth=不重试+换key+换服务商；content_policy=不重试+可换服务商（换 key 没用，请求本身被拦）。「不重试 ≠ 直接结束」：换 key/换 provider 走完才算无路可走。
 - 恢复管线：分类前恢复 → 分类后恢复（凭证轮换/池）→ 路由（fallback 激活）→ 溢出恢复（压缩）→ 终局 settle。
 - **每次 fallback 激活必须以 restart_with_rebuilt_messages 离开重试循环**（让 preflight 对 fallback 的上下文窗口重跑，#84733）；401/403 先试凭证刷新再 failover。
 - restart 退款有上限：restart_count（per-turn 累计）≤ max_retries，防 runaway redirect/rebuild 无限退款持有租约（turn_iteration_prep.py:448-527）。
