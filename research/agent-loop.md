@@ -77,6 +77,10 @@
 - agent 级内联工具 15 个（inline_tool_executors.py:237）：todo_list、message_agent、session_search、memory、clarify、read_terminal、desktop_preview、drive_preview、annotate_preview、read_window_below、gui_tour、manage_connections、manage_catalog、setup_mcp、delegate_task——需要 live AIAgent 状态，绕过 registry。
 - 裁剪细节（run_agent.py:1201-1237）：**去重**——同一批内 (tool_name, canonicalized_args) 相同的调用只留第一份；参数先规范化（合法 JSON 重排序键、压缩空白）再比较，键序/空白差异绕不过去重。**delegate 上限**——一批内 delegate_task 数量超过 max_concurrent_children 的直接丢弃（其余非 delegate 调用全保留）。裁剪发生在 stage/persist 之前，被丢的调用不进落库的助手行，所以不产生「有调用无结果」的协议问题。
 - persist-before-execute 的准确语义（turn_tool_round.py:53-56, 118-141）：先把含这批 tool call 的助手行增量写进会话库，写成功才开始执行；执行中崩溃/被破坏性工具重启，resume 能看到「这批调用已发过」（最多缺结果行）。落库失败 → 整轮失败（exit_reason=session_persistence_failed），绝不从纯内存状态执行——保证永不出现「库里没记录、实际执行了」。
+- 崩溃后悬空调用（有调用、无结果）的恢复处理：**不重执行**（transcript 无重放语义）。清理在下一轮请求前，两层：
+  1. `repair_message_sequence`（turn_iteration_prep.py:203-204 每圈请求准备时跑，docstring 明说覆盖 resumed histories）的 `_prune_unanswered_tool_calls` pass（agent_runtime_helpers.py:552-588）：immediately-following tool run 没应答的调用从助手行剪掉；剪完无 payload 的助手行整条删（空助手行 provider 400）；原地改写后重新落库。
+  2. `_sanitize_api_messages`（turn_request_assembly.py:148，每次调用前跑请求副本）的 `_pair_tool_calls_positionally`（agent_runtime_helpers.py:2858-2929）：positional pairing——请求副本里漏网的 unanswered call 补 stub 结果 "[Result unavailable — see context summary above]"；不紧跟其调用的结果丢弃（positional orphans）；`_dedupe_tool_call_ids` 注释明说 crash/resume glitches 是重复 id 来源之一，此层兜底。
+  另：压缩侧 `_sanitize_tool_pairs`（context_compressor.py:4482-4520）对尾部 in-flight 助手行的未应答调用保留原文（执行器还没来得及贴结果），也靠 pre-API stub 兜底。
 - 心跳的准确机制（turn_tool_round.py:211-220 注释 + activity_tracking.py:41-89）：gateway 有不活跃看门狗 HERMES_AGENT_TIMEOUT（默认 1800s），agent 的活动时间戳超过该窗口没刷新就杀会话（#69559、#69131）。时间戳不是进程活着就自动刷，只在事件发生时由 _touch_activity 打点（发消息、收响应、贴结果等）。危险窗口：工具结果贴回 ~0s → 随后的压缩评估/落库/下一圈慢模型调用期间无任何事件打点 → 看门狗误杀健康会话。修法：贴回结果后立刻 _touch_activity 一次再进下一圈。_touch_activity 同时刷内存时间戳（看门狗读）+ 限速 60s 的 SessionDB 持久活动行。
 - 工具异常归一化：异常/超时/取消都归一为托管结果类型（_ManagedToolResult/_ToolTimeoutResult/_ToolCancelledResult）回填模型，错误文本有长度上限；只有落库失败或护栏终止工具轮。
 - delegate_task：顶层委托后台执行（句柄返回、结果以消息回流）；嵌套 orchestrator 同步。
