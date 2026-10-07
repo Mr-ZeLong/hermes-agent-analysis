@@ -75,6 +75,9 @@
 - 执行编排（run_agent.py:1326）：≤1 顺序；多个 segment planner 切「并行安全段 + 顺序屏障」按段执行（并行段并发、屏障串行——混合批次的并行段也是并发的）；结果按 tool_call 原序回填。
 - **并行安全判定（第一轮审核核实，tool_dispatch_helpers.py）**：保守白名单制——`_PARALLEL_SAFE_TOOLS`（只读/无共享可变状态：read_file、web_search、session_search、vision_analyze 等）；文件类按路径重叠准入（readers 可共享子树、writer 与任何重叠冲突）；交互工具（clarify、manage_connections、manage_catalog）永远屏障；破坏性终端命令模式识别。不在安全域默认串行。
 - agent 级内联工具 15 个（inline_tool_executors.py:237）：todo_list、message_agent、session_search、memory、clarify、read_terminal、desktop_preview、drive_preview、annotate_preview、read_window_below、gui_tour、manage_connections、manage_catalog、setup_mcp、delegate_task——需要 live AIAgent 状态，绕过 registry。
+- 裁剪细节（run_agent.py:1201-1237）：**去重**——同一批内 (tool_name, canonicalized_args) 相同的调用只留第一份；参数先规范化（合法 JSON 重排序键、压缩空白）再比较，键序/空白差异绕不过去重。**delegate 上限**——一批内 delegate_task 数量超过 max_concurrent_children 的直接丢弃（其余非 delegate 调用全保留）。裁剪发生在 stage/persist 之前，被丢的调用不进落库的助手行，所以不产生「有调用无结果」的协议问题。
+- persist-before-execute 的准确语义（turn_tool_round.py:53-56, 118-141）：先把含这批 tool call 的助手行增量写进会话库，写成功才开始执行；执行中崩溃/被破坏性工具重启，resume 能看到「这批调用已发过」（最多缺结果行）。落库失败 → 整轮失败（exit_reason=session_persistence_failed），绝不从纯内存状态执行——保证永不出现「库里没记录、实际执行了」。
+- 心跳的准确机制（turn_tool_round.py:211-220 注释 + activity_tracking.py:41-89）：gateway 有不活跃看门狗 HERMES_AGENT_TIMEOUT（默认 1800s），agent 的活动时间戳超过该窗口没刷新就杀会话（#69559、#69131）。时间戳不是进程活着就自动刷，只在事件发生时由 _touch_activity 打点（发消息、收响应、贴结果等）。危险窗口：工具结果贴回 ~0s → 随后的压缩评估/落库/下一圈慢模型调用期间无任何事件打点 → 看门狗误杀健康会话。修法：贴回结果后立刻 _touch_activity 一次再进下一圈。_touch_activity 同时刷内存时间戳（看门狗读）+ 限速 60s 的 SessionDB 持久活动行。
 - 工具异常归一化：异常/超时/取消都归一为托管结果类型（_ManagedToolResult/_ToolTimeoutResult/_ToolCancelledResult）回填模型，错误文本有长度上限；只有落库失败或护栏终止工具轮。
 - delegate_task：顶层委托后台执行（句柄返回、结果以消息回流）；嵌套 orchestrator 同步。
 - housekeeping 工具轮（memory/todo_list/skill_manage/session_search）静音 tool progress。
