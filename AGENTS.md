@@ -125,7 +125,7 @@ function calling、MCP、上下文工程、记忆、多智能体协作、安全�
 
 **写作：**
 
-1. 建分支 `docs/<topic>`——每个主题一个分支、一个 PR。
+1. 直接在 main 上开工，不建主题分支、不走 PR（个人文档仓库）——每个主题一组连续提交。
 2. 读该主题对应的子系统 AGENTS.md 和 developer-guide 文档，列出官方 claim 清单。
 3. grep 定位实现 → 通读关键文件 → 记录机制事实（怎么运转、为什么这么设计、边界在哪）。
 4. 先出问题树（首问 + 流程问题清单 + 每问预想的追问），再写正文。
@@ -151,10 +151,9 @@ function calling、MCP、上下文工程、记忆、多智能体协作、安全�
 **交付：**
 
 10. 在根 `README.md` 的文档索引表中登记状态（未开始 / draft / done）。
-11. 提 PR 合入主分支。PR 描述附两轮审核的处理记录，按三个审核员分组：各提了什么问题、改了什么、驳回了什么及理由。
-12. PR 合入后删除主题分支（本地与远端）。不是推送完就删——PR 合入前删远端分支会把它关闭。
+11. 定稿提交到 main 并推送。提交说明附两轮审核的处理记录，按三个审核员分组：各提了什么问题、改了什么、驳回了什么及理由。
 
-Git 约定：工作区根目录就是 git 仓库，远端是 gh 创建的 public 仓库（`Mr-ZeLong/hermes-agent-analysis`），所有 PR 都提到它。`hermes-agent/` 整个目录被 `.gitignore` 排除——上游源码只作本地只读参考，不进我们的仓库，也不进文档。
+Git 约定：工作区根目录就是 git 仓库，远端是 gh 创建的 public 仓库（`Mr-ZeLong/hermes-agent-analysis`）。个人更新文档，直接在 main 上提交、推送，不建分支、不提 PR。`hermes-agent/` 整个目录被 `.gitignore` 排除——上游源码只作本地只读参考，不进我们的仓库，也不进文档。
 
 ## 关于 `hermes-agent/` 内部的 AGENTS.md
 
@@ -176,7 +175,8 @@ ls hermes-agent/agent/turn_*.py
 # 意图考古：某符号的演变历史
 git -C hermes-agent log --oneline -S "context_compressor"
 
-# 主题分支与 PR（每个主题一个）
-git checkout -b docs/context-engineering   # 示例：主题分支
-gh pr create                               # PR 描述附两轮审核处理记录
+# 主题定稿提交与推送（直接在 main，不建分支不走 PR）
+git add docs/tool-system.md research/tool-system.md
+git commit -m "docs: 工具系统与 function calling 定稿（附两轮审核处理记录）"
+git push
 ```
