@@ -40,28 +40,33 @@ function calling、MCP、上下文工程、记忆、多智能体协作、安全�
 
 | # | 主题 | 事实调研入口 |
 |---|------|--------------|
-| 1 | Agent 主循环与编排 | `agent/conversation_loop.py`（`run_conversation()`）、`agent/turn_*.py`（31 个阶段文件）、`run_agent.py`（`AIAgent` 门面） |
-| 2 | 工具系统与 function calling | `tools/registry.py`（import 时自注册）、`model_tools.py`、`toolsets.py`、`tools/tool_search.py`（渐进式披露） |
-| 3 | 上下文工程：prompt 组装 / 缓存 / 压缩 | `agent/prompt_builder.py`、`agent/prompt_caching.py`、`agent/context_compressor.py`、`agent/context_engine.py`（可插拔 ABC） |
-| 4 | 记忆系统 | `agent/memory_provider.py` + `agent/memory_manager.py`、`plugins/memory/*`（mem0、honcho 等 7 家）、`hermes_state_search.py` + `native/fts5_cjk` |
+| 1 | 总体架构与设计思想 | 根 `AGENTS.md` + `website/docs/developer-guide/architecture.md`（claim 源）、`run_agent.py`（`AIAgent` 门面）、`gateway/`（多平台入口）、`hermes_state_*.py`（共享状态库）、`cli.py` / `cron/`（CLI 与定时入口） |
+| 2 | Agent 主循环与编排 | `agent/conversation_loop.py`（`run_conversation()`）、`agent/turn_*.py`（31 个阶段文件）、`run_agent.py`（`AIAgent` 门面） |
+| 3 | 工具系统与 function calling | `tools/registry.py`（import 时自注册）、`model_tools.py`、`toolsets.py`、`tools/tool_search.py`（渐进式披露） |
+| 4 | 上下文工程：prompt 组装 / 缓存 / 压缩 | `agent/prompt_builder.py`、`agent/prompt_caching.py`、`agent/context_compressor.py`、`agent/context_engine.py`（可插拔 ABC） |
+| 5 | 记忆系统 | `agent/memory_provider.py` + `agent/memory_manager.py`、`plugins/memory/*`（mem0、honcho 等 7 家）、`hermes_state_search.py` + `native/fts5_cjk` |
 
 **P1 —— 高频**
 
 | # | 主题 | 事实调研入口 |
 |---|------|--------------|
-| 5 | MCP（client + server） | `tools/mcp_tool.py` + 约 25 个 sibling 文件、`mcp_serve.py`、`optional-mcps/` |
-| 6 | 子代理与多智能体 | `tools/delegate_tool*.py`、`agent/moa_loop.py`（MoA）、`plugins/platforms/a2a/` |
-| 7 | 安全与审批 | `tools/approval*.py`、`tools/threat_patterns.py`、`agent/secret_scope.py`、`agent/redact.py` |
-| 8 | 沙箱与代码执行环境 | `tools/environments/`（local/docker/ssh/modal/daytona…）、`tools/code_execution_tool.py`、`agent/estop.py` |
-| 9 | Provider 抽象与流式 | `providers/base.py`、`plugins/model-providers/`（38 家）、`agent/chat_completion_helpers.py`、`agent/anthropic_adapter.py` 等适配器 |
+| 6 | MCP（client + server） | `tools/mcp_tool.py` + 约 25 个 sibling 文件、`mcp_serve.py`、`optional-mcps/` |
+| 7 | 子代理与多智能体 | `tools/delegate_tool*.py`、`agent/moa_loop.py`（MoA）、`plugins/platforms/a2a/` |
+| 8 | 安全与审批 | `tools/approval*.py`、`tools/threat_patterns.py`、`agent/secret_scope.py`、`agent/redact.py` |
+| 9 | 沙箱与代码执行环境 | `tools/environments/`（local/docker/ssh/modal/daytona…）、`tools/code_execution_tool.py`、`agent/estop.py` |
+| 10 | Provider 抽象与流式 | `providers/base.py`、`plugins/model-providers/`（38 家）、`agent/chat_completion_helpers.py`、`agent/anthropic_adapter.py` 等适配器 |
 
 **P2 —— 差异化亮点，用来拉开深度**
 
 | # | 主题 | 事实调研入口 |
 |---|------|--------------|
-| 10 | 自我改进闭环（项目卖点） | `agent/curator.py`（skills 自动创建/改进）、`skills/`、`agent/skill_commands.py` |
-| 11 | 规划与任务管理 | `tools/todo_tool.py`、`tools/kanban_tools.py`、`gateway/run_goals.py`、`cron/` |
-| 12 | 评估与可观测 | `evals/`（69 项离线评测）、`agent/monitoring/`（OTLP）、`plugins/observability/langfuse/` |
+| 11 | 自我改进闭环（项目卖点） | `agent/curator.py`（skills 自动创建/改进）、`skills/`、`agent/skill_commands.py` |
+| 12 | 规划与任务管理 | `tools/todo_tool.py`、`tools/kanban_tools.py`、`gateway/run_goals.py`、`cron/` |
+| 13 | 评估与可观测 | `evals/`（69 项离线评测）、`agent/monitoring/`（OTLP）、`plugins/observability/langfuse/` |
+
+第 1 篇（总体架构）给全系列打底：面试开场必问的「整体介绍一下这个项目」。讲组件/进程布局
+（入口层 → agent 核心 → provider 层，状态库与插件/skills/MCP 边缘）、CLI / 平台消息 / 定时任务三条数据流、
+两条全局设计不变量。边界：各子系统只点名作用和位置、细节回指后续各篇；主循环内部一步不进（归第 2 篇）。
 
 ### 不做（除非作为一句话背景交代）
 
