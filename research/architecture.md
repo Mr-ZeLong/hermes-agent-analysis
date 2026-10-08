@@ -84,6 +84,15 @@
 8. **与 agent-loop.md 的例外口径对齐**：第 2 篇已写明——工具集配置变更普通会话等下个会话，**长挂机器人会话记版本标记、配置一变下一轮直接重建提示词立即生效**；工具列表允许尾部追加（一次性重算后重新稳定）。Q5 的「唯一例外是压缩」必须改成「明路几条」。
 9. 看板另有 kanban.db；「唯一事实源」限定为「会话与提示词的主状态库」。
 
+## 二·六、第二轮审核新增/纠正的事实（均亲自核实）
+
+1. **核心对平台不是零感知**：agent/prompt_builder.py:657 起有按平台写的提示词说明表（whatsapp/telegram/discord/signal/email/cron/cli/tui/desktop…各自的输出格式与媒体说明，行 660-745）；按平台标签分支至少三处（conversation_loop.py:732 桌面/TUI 工具刷新、system_prompt.py:726 cli/tui 安装树上下文回退、agent_init.py:1281-1286 platform 决定 agent_context）；agent/ 内 19 个文件约 25 处反向 import gateway./tui_gateway.。正文改为「核心不为任何平台单独写一套执行逻辑 + 平台标签级特例（提示词说明表）+ 约二十个文件的例外尾巴」。
+2. **「立即重建提示词」的例外只属于 Bot Chat**：agent/system_prompt.py:344-362 `_bot_mode_parts` 门控 `_title == BOT_CHAT_TITLE`（"only in a bot's canonical Bot Chat session"）；conversation_loop.py:646-680 能力指纹过期检查、:770-800 重建 + record_cache_break("toolset_change")；Bot Chat 是桌面/终端界面（platform in desktop/tui）里 Bot Mode 的常驻对话。**消息平台会话不走此路**：网关 agent 缓存键含解析后的工具集（run_agent_cache.py:129），配置变→重建 agent、工具数组更新，但系统提示词仍从库逐字节恢复不重建。→ 已同步修正 docs/architecture.md Q5 例外块与 docs/agent-loop.md:86（原文把该机制归给「挂在 Telegram 等平台上的机器人会话」，属事实错误）。
+3. **工具目录分档降级**：tool_search_catalog.py:261-292——full（名字+简介）→ names → summary（每组只报 `N tools — names not listed`）→ none；按服务器逐个降级。「模型至少始终看得到名字」不成立，始终可见的是检索入口。
+4. **桌面连的是后端池不是网关**：apps/desktop/src/AGENTS.md:26-33——桌面按 (connection, profile) 池化连接 `hermes serve` 后端，远端走 SSH/URL+token/Cloud，连的都是后端；消息网关由后端接口 detached 拉起、独立存活。
+5. **WAL 老库绝不现场降级**：hermes_state_wal.py:283-291（已 WAL 的库保持并告警配置覆盖）、:415-425（跨虚拟机文件系统上已开 WAL 的库只警告）；理由：现场降级毁掉其他进程未 checkpoint 的提交。NFS/SMB 多为直接报错，ZFS/跨虚拟机挂载（virtiofs/9p）会静默写坏。
+6. **压缩不是「显式选择」**：两层自动触发（网关 hygiene 85%、agent 内 50% 可配），例外块改为「压缩超限被迫、另两条主动选择」。
+
 1. **Q1 ⭐⭐⭐ 首问**：Hermes 整体是个什么架构？有哪些组成部分？
    - 主答：一句话结论 + 组件布局图（入口层/核心/状态库/边缘）+ 顺着图的概述（分层 + 各层职责一句话）。
    - 追问：为什么说是"个人 agent"架构、和"服务端 agent 平台"架构的差别（单机单用户、无 K8s/消息中间件、状态就地）。
