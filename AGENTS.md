@@ -152,6 +152,7 @@ function calling、MCP、上下文工程、记忆、多智能体协作、安全�
 
 10. 在根 `README.md` 的文档索引表中登记状态（未开始 / draft / done）。
 11. 提 PR 合入主分支。PR 描述附两轮审核的处理记录，按三个审核员分组：各提了什么问题、改了什么、驳回了什么及理由。
+12. PR 合入后删除主题分支（本地与远端）。不是推送完就删——PR 合入前删远端分支会把它关闭。
 
 Git 约定：工作区根目录就是 git 仓库，远端是 gh 创建的 public 仓库（`Mr-ZeLong/hermes-agent-analysis`），所有 PR 都提到它。`hermes-agent/` 整个目录被 `.gitignore` 排除——上游源码只作本地只读参考，不进我们的仓库，也不进文档。
 
