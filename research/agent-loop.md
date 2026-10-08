@@ -126,3 +126,4 @@
 - 内部统一 OpenAI 风格消息格式；reasoning 存于 assistant 消息附带字段。
 - 严格角色交替：不允许连续同角色（tool 并行结果除外）；/steer 是唯一「合成 user 行」例外。
 - 系统 prompt 字节稳定；中途注入只走 user 消息或**当前** tool result 尾部追加（旧行已缓存不可动）。
+- 线程模型三层（核实，Q9/GIL 追问依据）：**跨会话一轮一线程**——gateway/turn_executor.py:9 `_UnboundedThreadExecutor`「One thread per submitted work item; no queue, no cap」，轮结束线程退出，都在网关进程内（会话锁保证一会话同时最多一轮，故「一会话一线程」是合理简化）；**工具并发段线程池**——tool_executor.py:1478 `DaemonThreadPoolExecutor(max_workers=…)` 有上限；**单会话主循环**同步单线程。GIL 论证：agent 负载几乎全 I/O（等模型响应/子进程/文件），阻塞时释放 GIL，线程真并发；Python 纯 CPU 计算才被串行。requires-python >=3.11,<3.15（pyproject.toml:15），标准 GIL 构建。
