@@ -16,7 +16,7 @@
 | 7 | 会话存储 SQLite + FTS5、会话谱系、按平台隔离、原子写 | architecture.md | ✅ 每 home 一个 state.db（hermes_state_dbfile.py）；WAL 日志模式，文件系统不兼容（NFS/SMB/ZFS/WSL1…）自动降级 DELETE（hermes_state_wal.py `_WAL_INCOMPAT_MARKERS`）；FTS5 + 自研 CJK 分词扩展（native/fts5_cjk）；谱系与跨进程 turn lease 在 hermes_state_compression.py:529-561 |
 | 8 | 两条全局不变量：per-conversation prompt caching 不可破坏（唯一例外压缩）；核心窄腰、能力放边缘 | 根 AGENTS.md | ✅ 缓存不变量见 agent-loop 调研 #12（系统 prompt 从会话库逐字节恢复）；窄腰：_HERMES_CORE_TOOLS 硬编码核心表（toolsets.py:12），根 AGENTS.md Footprint Ladder 六级（扩展现有→CLI 命令+skill→服务门控工具→插件→MCP server→新核心工具垫底）；「每个核心工具随每次 API 调用发送」根 AGENTS.md 原文 |
 | 9 | 六条设计原则（prompt 稳定 / 可观测 / 可中断 / 平台无关核心 / 松耦合 / profile 隔离） | architecture.md「Design Principles」 | ✅ 各有源码支撑：平台无关=claim1；profile 隔离=claim10；可中断=agent-loop 调研（中断检查/steer/redirect）；松耦合=registry + check_fn 门控 + ABC（memory provider、context engine 均可插拔 ABC） |
-| 10 | 每 profile 独立 home/config/memory/会话/gateway PID，多 profile 并发；multiplex 下一个网关进程服务多 profile | architecture.md + 根 AGENTS.md | ✅ profiles 目录 <home>/profiles/<name>（hermes_constants.py:230-246）；gateway.multiplex_profiles 配置键（gateway/config.py:613、hermes_cli/config.py:1016）；profile = home + 密钥域 + 终端域（根 AGENTS.md Code Shape 规则）；token 锁防两 profile 共用一份凭证（gateway/status.py:1681 acquire_scoped_lock / :1729 release） |
+| 10 | 每 profile 独立 home/config/memory/会话/gateway PID，多 profile 并发；multiplex 下一个网关进程服务多 profile | architecture.md + 根 AGENTS.md | ⚠️ **前半已过时**（第一轮审核纠错，亲自核实）：多路复用**默认开启且不可关**——hermes_cli/gateway_multiplex_mode.py:1-46 模块头自述 "the default is on, and there is no opt-out"；显式 `false` 被废弃（RETired，按未设置处理）；一档案一网关只剩 `gateway.standalone: true` **临时兼容开关**。隐式默认是"预检通过才合"（不安全则维持单档案跑，拒绝只记日志不致命）。architecture.md 设计原则表的 "own gateway PID" 是旧形态说法（单档案部署当然只有一个网关）。其余核实：profiles 目录 <home>/profiles/<name>（hermes_constants.py:230-246）；profile = home + 密钥域 + 终端域；token 锁防两档案共用一份凭证（gateway/status.py:1681）✅ |
 | 11 | cron 是一等 agent 任务（不是 shell 任务），jobs.json，多平台投递 | architecture.md + cron/AGENTS.md | ✅ cron/AGENTS.md：agent 用 cronjob 工具排程；用户用 hermes cron 或 /cron；调度格式 4 种；600s 不活跃看门狗；tick 先推进 next_run_at 再派发（at-most-once）；**一个宿主页网关进程 tick 所有 profile 的任务库，不看 multiplex 开关**（run_goals.py:390：CLI/TUI 自己的循环除外） |
 | 12 | Hermes 也能当 MCP server | mcp_serve.py | ✅ `hermes mcp serve`：stdio MCP server，把会话暴露成工具（列表/读历史/发消息/轮询事件/管理审批）给任意 MCP 客户端（Claude Code、Cursor…）。注意：是「会话通道桥」，不是把 agent 本身包装成工具 |
 | 13 | 桌面 app 的 serve 后端随 app 退出而死，消息网关独立存活 | gateway/AGENTS.md「Gateway lifecycle」 | ✅ serve 后端 spawn 网关用 detached 方式（start_new_session / DETACHED_PROCESS），app 退出的 SIGTERM 到不了网关 |
@@ -72,7 +72,17 @@
 ### 规模数字（本 commit 实测，正文用约数）
 - 适配器 ≈30（内置 8 + 插件 22）；模型服务商 38；记忆 provider 7；终端后端 7；工具集 41；内置工具注册 64 处 + 15 内联 + MCP 动态；主循环阶段文件 31；hermes_state 拆分 30；evals 69；测试文件 5608；Python 原始行（不含 tests/website）~89 万。
 
-## 三、问题树（正文结构）
+## 二·五、第一轮审核新增/纠正的事实（均亲自核实）
+
+1. **工具渐进式披露默认开启（与根 AGENTS.md "Every model tool is sent on every API call" 冲突，以源码为准）**：tools/tool_search.py:1-6——MCP/插件工具 + 一批点名核心工具在模型可见清单里被三个桥工具（搜索/查详情/调用）替代；config_defaults.py:2014-2020 默认 defer 名单含核心工具 computer_use、session_search、image_generate、todo_list、process_manage、cronjob_manage + 桌面工具；enabled:"auto"，存在任一可延迟工具即激活。分档：目录塞得下给名字+一句简介，塞不下只给名字，再不行裸桥。核心工具除非被点名否则不延迟。→ 正文 Q5 措辞改为「绝大多数核心工具随每次调用发送，少数冷门的走渐进式披露」。
+2. **WAL 第二条保守通道**：hermes_state_wal.py `apply_wal_with_fallback`——自带 SQLite 3.50.4 落在 WAL-reset 缺陷区间（sqlite_runtime.py:23-30，修复线 3.51.3+/3.50.7+），**新建库不启用 WAL（普通日志模式），已开 WAL 的老库保持**；文件系统不兼容（NFS/SMB/FUSE）另走降级。→ Q3 追问补第二条通道。
+3. **核心→入口的懒加载例外**：agent/conversation_loop.py:720-738（platform in ("desktop","tui") 分支 + 从 tui_gateway.server 懒加载工具集刷新）、agent/system_prompt.py:418（platform_registry）、run_agent.py 构造参数含 platform/user_id/chat_id。「核心不引用任何入口」字面为假，正文改为「核心不实现任何平台的差异逻辑 + 个别懒加载是历史遗留小例外」。
+4. **同一网关进程内同会话连发 ≠ 跨进程锁排队**：同进程内后续消息进适配器待处理队列（platforms/base.py `_pending_messages`、run_busy.py），第一条轮次结束再处理；「每秒重试/最多半小时」是**跨进程**轮次锁参数（hermes_state_compression.py:588-599）。→ Q2 追问分两层讲。
+5. **api_server 适配器每请求重建 agent**（不复用会话缓存，只停泊记忆 provider）：gateway/AGENTS.md §Profile scope "api_server rebuilds the agent per request but not the memory provider"。→ Q2 追问补例外半句。
+6. **插件发现三源**（hermes_cli/plugins.py:1-5）：用户 ~/.hermes/plugins/<name>/、项目 ./.hermes/plugins/<name>/（需显式开启）、pip 包（入口点）；记忆/上下文引擎有各自发现。启动扫描，经注册接口交工具/钩子/命令，不碰核心文件。→ Q5 新增插件机制追问。
+7. **子系统 AGENTS.md「~8k chars」是目标不是上限**（根 AGENTS.md:4-6 "aim for"），实际 1 万–2.4 万字符不等；「真进程」非通用 E2E 要求（那是 Windows wine2e 专项），通用要求是 real imports + 临时 HERMES_HOME。→ Q6 措辞修正。
+8. **与 agent-loop.md 的例外口径对齐**：第 2 篇已写明——工具集配置变更普通会话等下个会话，**长挂机器人会话记版本标记、配置一变下一轮直接重建提示词立即生效**；工具列表允许尾部追加（一次性重算后重新稳定）。Q5 的「唯一例外是压缩」必须改成「明路几条」。
+9. 看板另有 kanban.db；「唯一事实源」限定为「会话与提示词的主状态库」。
 
 1. **Q1 ⭐⭐⭐ 首问**：Hermes 整体是个什么架构？有哪些组成部分？
    - 主答：一句话结论 + 组件布局图（入口层/核心/状态库/边缘）+ 顺着图的概述（分层 + 各层职责一句话）。
