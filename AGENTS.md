@@ -51,18 +51,19 @@ function calling、MCP、上下文工程、记忆、多智能体协作、安全�
 | # | 主题 | 事实调研入口 |
 |---|------|--------------|
 | 6 | MCP（client + server） | `tools/mcp_tool.py` + 约 25 个 sibling 文件、`mcp_serve.py`、`optional-mcps/` |
-| 7 | 子代理与多智能体 | `tools/delegate_tool*.py`、`agent/moa_loop.py`（MoA）、`plugins/platforms/a2a/` |
-| 8 | 安全与审批 | `tools/approval*.py`、`tools/threat_patterns.py`、`agent/secret_scope.py`、`agent/redact.py` |
-| 9 | 沙箱与代码执行环境 | `tools/environments/`（local/docker/ssh/modal/daytona…）、`tools/code_execution_tool.py`、`agent/estop.py` |
-| 10 | Provider 抽象与流式 | `providers/base.py`、`plugins/model-providers/`（38 家）、`agent/chat_completion_helpers.py`、`agent/anthropic_adapter.py` 等适配器 |
+| 7 | 插件体系 | `hermes_cli/plugins.py`（发现与装载）、`plugins/` + 各 `plugins/AGENTS.md`、`website/docs/developer-guide/plugins/`、`tools/plugin_guard*.py`、`hermes_cli/middleware.py` |
+| 8 | 子代理与多智能体 | `tools/delegate_tool*.py`、`agent/moa_loop.py`（MoA）、`plugins/platforms/a2a/` |
+| 9 | 安全与审批 | `tools/approval*.py`、`tools/threat_patterns.py`、`agent/secret_scope.py`、`agent/redact.py` |
+| 10 | 沙箱与代码执行环境 | `tools/environments/`（local/docker/ssh/modal/daytona…）、`tools/code_execution_tool.py`、`agent/estop.py` |
+| 11 | Provider 抽象与流式 | `providers/base.py`、`plugins/model-providers/`（38 家）、`agent/chat_completion_helpers.py`、`agent/anthropic_adapter.py` 等适配器 |
 
 **P2 —— 差异化亮点，用来拉开深度**
 
 | # | 主题 | 事实调研入口 |
 |---|------|--------------|
-| 11 | 自我改进闭环（项目卖点） | `agent/curator.py`（skills 自动创建/改进）、`skills/`、`agent/skill_commands.py` |
-| 12 | 规划与任务管理 | `tools/todo_tool.py`、`tools/kanban_tools.py`、`gateway/run_goals.py`、`cron/` |
-| 13 | 评估与可观测 | `evals/`（69 项离线评测）、`agent/monitoring/`（OTLP）、`plugins/observability/langfuse/` |
+| 12 | 自我改进闭环（项目卖点） | `agent/curator.py`（skills 自动创建/改进）、`skills/`、`agent/skill_commands.py` |
+| 13 | 规划与任务管理 | `tools/todo_tool.py`、`tools/kanban_tools.py`、`gateway/run_goals.py`、`cron/` |
+| 14 | 评估与可观测 | `evals/`（69 项离线评测）、`agent/monitoring/`（OTLP）、`plugins/observability/langfuse/` |
 
 第 1 篇（总体架构）给全系列打底：面试开场必问的「整体介绍一下这个项目」。讲组件/进程布局
 （入口层的各进程与长驻网关 → agent 核心 → 状态库 → 外围扩展）、CLI / 平台消息 / 定时任务三类入口的数据流、

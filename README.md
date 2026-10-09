@@ -40,13 +40,14 @@ Hermes Agent 是一个约 45 万行 Python 的**自研**个人 Agent：纯同步
 | 4 | 上下文工程（prompt 组装 / 缓存 / 压缩） | P0 | `docs/context-engineering.md` | 未开始 |
 | 5 | 记忆系统 | P0 | `docs/memory.md` | 未开始 |
 | 6 | MCP（client + server） | P1 | `docs/mcp.md` | 未开始 |
-| 7 | 子代理与多智能体 | P1 | `docs/subagents.md` | 未开始 |
-| 8 | 安全与审批 | P1 | `docs/security-approval.md` | 未开始 |
-| 9 | 沙箱与代码执行环境 | P1 | `docs/sandbox.md` | 未开始 |
-| 10 | Provider 抽象与流式 | P1 | `docs/provider-streaming.md` | 未开始 |
-| 11 | 自我改进闭环 | P2 | `docs/self-improvement.md` | 未开始 |
-| 12 | 规划与任务管理 | P2 | `docs/planning.md` | 未开始 |
-| 13 | 评估与可观测 | P2 | `docs/evals-observability.md` | 未开始 |
+| 7 | 插件体系 | P1 | `docs/plugins.md` | 未开始 |
+| 8 | 子代理与多智能体 | P1 | `docs/subagents.md` | 未开始 |
+| 9 | 安全与审批 | P1 | `docs/security-approval.md` | 未开始 |
+| 10 | 沙箱与代码执行环境 | P1 | `docs/sandbox.md` | 未开始 |
+| 11 | Provider 抽象与流式 | P1 | `docs/provider-streaming.md` | 未开始 |
+| 12 | 自我改进闭环 | P2 | `docs/self-improvement.md` | 未开始 |
+| 13 | 规划与任务管理 | P2 | `docs/planning.md` | 未开始 |
+| 14 | 评估与可观测 | P2 | `docs/evals-observability.md` | 未开始 |
 
 状态取值：未开始 / draft / done。文件名是预定名，开写时按实际调整。
 
