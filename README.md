@@ -38,7 +38,7 @@ Hermes Agent 是一个约 45 万行 Python 的**自研**个人 Agent：纯同步
 | 2 | Agent 主循环与编排 | P0 | `docs/agent-loop.md` | done |
 | 3 | 工具系统与 function calling | P0 | `docs/tool-system.md` | done |
 | 4 | 上下文工程（prompt 组装 / 缓存 / 压缩） | P0 | `docs/context-engineering.md` | done |
-| 5 | 记忆系统 | P0 | `docs/memory.md` | 未开始 |
+| 5 | 记忆系统 | P0 | `docs/memory.md` | done |
 | 6 | MCP（client + server） | P1 | `docs/mcp.md` | 未开始 |
 | 7 | 插件体系 | P1 | `docs/plugins.md` | 未开始 |
 | 8 | 子代理与多智能体 | P1 | `docs/subagents.md` | 未开始 |
