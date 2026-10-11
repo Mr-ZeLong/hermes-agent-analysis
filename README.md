@@ -37,7 +37,7 @@ Hermes Agent 是一个约 45 万行 Python 的**自研**个人 Agent：纯同步
 | 1 | 总体架构与设计思想 | P0 | `docs/architecture.md` | done |
 | 2 | Agent 主循环与编排 | P0 | `docs/agent-loop.md` | done |
 | 3 | 工具系统与 function calling | P0 | `docs/tool-system.md` | done |
-| 4 | 上下文工程（prompt 组装 / 缓存 / 压缩） | P0 | `docs/context-engineering.md` | 未开始 |
+| 4 | 上下文工程（prompt 组装 / 缓存 / 压缩） | P0 | `docs/context-engineering.md` | done |
 | 5 | 记忆系统 | P0 | `docs/memory.md` | 未开始 |
 | 6 | MCP（client + server） | P1 | `docs/mcp.md` | 未开始 |
 | 7 | 插件体系 | P1 | `docs/plugins.md` | 未开始 |
@@ -53,11 +53,12 @@ Hermes Agent 是一个约 45 万行 Python 的**自研**个人 Agent：纯同步
 
 ## 质量流程
 
-每篇文档定稿前要过**两轮独立审核**，审核员是三个互不通气的 subagent：
+每篇文档定稿前要过**两轮独立审核**，审核员是四个互不通气的 subagent：
 
 - **事实核查员**：把文档里的机制断言逐条带回源码验证；
 - **面试官**：查问题是不是真实高频问法、答得经不经得起追问；
-- **文字编辑**：查语言（无黑话、无废话）和问题树结构是否完整。
+- **文字编辑**：查语言（无黑话、无废话）和问题树结构是否完整；
+- **新人读者**：扮演刚学 agent 开发的工程师通读全篇，专找概念没交代、逻辑跳步这类读不懂的地方。
 
 主 agent 逐条核实审核意见、属实的改、误判的驳回并说明理由，两轮走完文档才算完成。
 每个主题一个 PR，PR 描述里附完整的审核处理记录。
