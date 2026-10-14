@@ -191,24 +191,6 @@ def register(ctx) -> None:
 
 装载顺序在装载前就定好：插件可以在清单里声明依赖别的插件，按依赖关系拓扑排序装载（被依赖的先装），同级按名字字母序；声明了依赖但对方没装，只警告不拦——依赖是建议性的，插件该在运行时自己探测对方在不在。
 
-### 追问：能拿一个插件走一遍装载那一刻吗？
-
-还拿 google_meet：它在启动扫描里过了门控、也被启用，轮到装载。宿主的动作分五步，正好对上主答的三步（起名＋导入＝导入，限时调用＋记账＝注册，收尾＝善后）：
-
-1. **起名**：宿主给它在进程里起一个唯一的模块名 `hermes_plugins.google_meet`——主答说的「独立命名空间」就是这个名字的前半截；多个配置档案共用进程时，末尾再拼一段档案散列防撞名；
-2. **按路径导入**：不走 Python 的模块搜索路径，直接拿文件路径把这个目录做成模块，核心就一行（为什么绕开搜索路径，见下一个追问）：
-
-```python
-spec = importlib.util.spec_from_file_location(
-    "hermes_plugins.google_meet",         # 宿主起的名字：隔离用的命名空间
-    ".../plugins/google_meet/__init__.py" # 按文件路径定位，不走搜索路径
-)
-```
-
-导入前先把同名旧模块从缓存里清掉，上一次装载的残留状态不继承；插件文件里自己的 import（tools、cli 这些）照常工作；
-3. **限时调注册**：导入和调注册函数放在一个后台线程里跑（线程名就叫 plugin-load:google_meet），主线程最多等 10 秒——Q1 贴的那个注册函数就在这一步被调用，每一句注册当场生效，同时往注册账本里记一笔；
-4. **记账归因**：注册函数正常返回后，宿主把账本里这一趟新记的笔目切出来归到它名下——五个工具、一个钩子、一条命令行命令，插件列表里显示的就是这份清单；
-5. **收尾**：任何一步抛异常（含超时），这个插件已记的账全部逆序撤销、已订阅的挂点退订，插件记为装载失败并写明原因，装载继续走下一个——就是主答说的「一个坏插件不挡所有人」。
 
 ### 追问：为什么按路径导入，不把插件目录加进模块搜索路径？
 
@@ -225,6 +207,39 @@ spec = importlib.util.spec_from_file_location(
 装载在独立线程里跑，有看门狗盯着，默认 10 秒超时（可配，最高 600 秒）。超时后做两件事：标记这个装载已放弃——之后这个插件再来注册任何东西一律忽略；抛超时错误走正常失败路径（禁用插件、清理已注册的一半）。为什么「之后一律忽略」：Python 杀不掉线程，那个卡住的注册函数可能还在后台跑，它晚到的注册若被放行，会落进刚被清理过的注册表，状态就脏了。
 
 这种卡死的装载线程最多养 8 个，到顶后新的装载直接拒绝——进程已经挂着 8 个卡死的装载，说明该修插件或重启了，不该再往里塞。
+
+限时是怎么实现的（代码有删减，略去线程上下文继承等细节）：
+
+```python
+def run_with_load_deadline(plugin_key, ctx, fn):
+    # fn = 这个插件的「导入 + 调注册函数」，限时只罩这一段
+    timeout = _resolve_plugin_load_timeout()   # 默认 10 秒，配 0 关闭，最高 600
+    if timeout <= 0:
+        return fn()                            # 关了限时：不开线程，就地跑
+    _reserve_abandoned_loader_slot()           # 卡死的装载线程已满 8 个，拒绝再装
+    outcome, failure = [], []
+
+    def _worker():
+        try:
+            outcome.append(fn())
+        except BaseException as exc:
+            failure.append(exc)                # 线程里不许直接抛，先存下来
+
+    worker = threading.Thread(target=_worker,
+                              name=f"plugin-load:{plugin_key}",
+                              daemon=True)      # 现开一个一次性线程，不是池
+    worker.start()
+    worker.join(timeout)                       # 调用线程只等这么久
+    if worker.is_alive():                      # 等完还活着 = 卡死了
+        ctx._abandon_load()                    # 标记已放弃：它之后再注册一律忽略
+        _ABANDONED_LOADERS.append(worker)      # 杀不掉，只能养着（上限 8 个）
+        raise PluginLoadTimeout(f"load timed out after {timeout:g}s")
+    if failure:
+        raise failure[0]                       # 线程里的异常搬回调用线程重抛
+    return outcome[0]
+```
+
+顺带把线程问题答死：**没有线程池**。这套限时只有一个入口——装载的主路径把「导入＋调注册函数」整个交给这个现开的一次性线程，跑完就丢，插件之间仍是一个接一个串行装；开线程是为了能限时放弃，不是为了并发。不开线程的情况就两种：超时配成 0 就地跑；以及一类不跑 Python 代码的便携插件（只登记技能和 MCP 配置，没有可卡的注册函数），根本不进这套限时。
 
 ### 追问：卸载怎么卸干净？
 
