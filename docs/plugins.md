@@ -70,46 +70,69 @@ flowchart TD
 
 ### 追问：能拿一个真实的插件举例吗？
 
-拿内置的磁盘清理插件 (disk-cleanup) 走一遍。它解决的问题是：agent 干活时会产生一堆临时文件——试运行的测试脚本、跑了一半的输出、定时任务的日志，攒着攒着磁盘就满了。整个插件四个文件：
+拿内置的 Google 会议插件 (google_meet) 走一遍——它让 agent 能加入 Google Meet 会议：入会、实时抓字幕转录、在会里说话。挑它是因为一个插件把四类注册物占全了：工具、钩子、命令行命令、技能文件。整个插件十来个文件，核心的几个：
 
 ```text
-plugins/disk-cleanup/
-├── plugin.yaml      # 清单：我是谁、提供什么
-├── __init__.py      # 入口：注册函数 + 钩子回调 + 斜杠命令
-├── disk_cleanup.py  # 实现：追踪、分类、删除
-└── README.md
+plugins/google_meet/
+├── plugin.yaml        # 清单：我是谁、提供什么
+├── __init__.py        # 入口：注册函数
+├── tools.py           # 五个工具的定义与实现
+├── meet_bot.py        # 无头浏览器入会、抓字幕
+├── process_manager.py # 会议进程的启停与状态
+├── cli.py             # hermes meet 子命令
+├── SKILL.md           # 技能：教模型开会流程的说明书
+└── node/ realtime/    # 远端节点、实时音频两组子模块
 ```
 
-清单内容（声明身份和提供的两个钩子，发现时读的就是它）：
+清单内容（声明身份、五个工具、一个钩子，发现时读的就是它）：
 
 ```yaml
-name: disk-cleanup
-version: 2.0.0
-description: "Auto-track and clean up ephemeral files (test scripts, temp
-  outputs, cron logs) created during Hermes sessions. Runs via plugin
-  hooks — no agent action required."
+name: google_meet
+version: 0.2.0
+description: "Join a Google Meet call, transcribe live captions, speak in
+  realtime, and follow up afterwards. ... Explicit-by-design: only joins
+  meet.google.com URLs passed in — no calendar scanning, no auto-dial."
+kind: standalone
+platforms:
+  - linux
+  - macos
+provides_tools:
+  - meet_join
+  - meet_leave
+  - meet_status
+  - meet_transcript
+  - meet_say
 provides_hooks:
-  - post_tool_call
   - on_session_end
 ```
 
-注册函数（入口文件的收尾三句，装载时被调用——这就是「受控注册接口」实际的样子）：
+注册函数（装载时被调用——三类注册一个函数里做全）：
 
 ```python
 def register(ctx) -> None:
-    ctx.register_hook("post_tool_call", _on_post_tool_call)
+    # Windows: no tested audio-routing path — refuse rather than half-work.
+    system = platform.system().lower()
+    if system not in {"linux", "darwin"}:
+        return
+    for name, schema, handler, emoji in _TOOLS:
+        ctx.register_tool(name=name, toolset="google_meet", schema=schema, handler=handler,
+                          check_fn=check_meet_requirements, emoji=emoji)
+    ctx.register_cli_command(
+        name="meet", help="Google Meet bot (join, transcribe, follow up)",
+        setup_fn=_register_meet_cli, handler_fn=_meet_command,
+        description=("Let the hermes agent join a Google Meet call and scrape live "
+                     "captions into a transcript. See: hermes meet setup"))
     ctx.register_hook("on_session_end", _on_session_end)
-    ctx.register_command("disk-cleanup", handler=_handle_slash,
-                         description="Track and clean up ephemeral Hermes session files.")
 ```
 
 跑起来的样子：
 
-- 每次工具执行后，它检查这次是不是写文件 (write_file) 或跑终端 (terminal)——是的话从参数和输出里抠出新建文件的路径，分类记档（测试文件、临时文件、下载……）；
-- 会话结束时，发现这一轮真记到过测试文件，就跑一次安全清理；
-- 用户随时敲 /disk-cleanup 查状态、预览要删什么、手动清或手动放弃。
+- **模型侧**：五个工具（入会 / 挂断 / 查状态 / 取转录 / 说话）各带一份可用性检查——系统对、浏览器库装了才亮，没装依赖的机器上模型根本看不到这些工具，不为它们白花说明书篇幅；
+- **会话结束钩子**兜底：会话结束时若还有一个活着的会议（无头浏览器进程），主动挂断——不然每个没关的会话都漏一个孤儿浏览器在后台吃内存；
+- **人侧**：`hermes meet` 子命令做设置（装依赖、登录浏览器配置）；
+- **注册函数自己决定挂多少**：开头一道平台门，Windows 上干脆什么都不注册——宁可整个缺席，不注册一半吊着。
 
-这个例子好在展示了插件不一定「给模型工具」：它一个工具都没给模型，全靠钩子在旁边记录、会话收尾时动手，再给人留一条命令——正好对应上面分类里「截流程的」和「给人用的」两组。
+对照着看就清楚了：插件远不止「给模型工具」——这个例子四组注册物占三组（给模型的工具加技能、截流程的钩子、给人用的命令），注册函数想挂几样挂几样，环境不合适还能一样不挂。
 
 ### 追问：有了插件为什么还要 MCP 和技能？什么时候选哪个？
 
