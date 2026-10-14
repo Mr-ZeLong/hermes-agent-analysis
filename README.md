@@ -41,7 +41,7 @@ Hermes Agent 是一个约 45 万行 Python 的**自研**个人 Agent：纯同步
 | 5 | 记忆系统 | P0 | `docs/memory.md` | done |
 | 6 | MCP（client + server） | P1 | `docs/mcp.md` | done |
 | 7 | 插件体系 | P1 | `docs/plugins.md` | done |
-| 8 | 子代理与多智能体 | P1 | `docs/subagents.md` | 未开始 |
+| 8 | 子代理与多智能体 | P1 | `docs/subagents.md` | done |
 | 9 | 安全与审批 | P1 | `docs/security-approval.md` | 未开始 |
 | 10 | 沙箱与代码执行环境 | P1 | `docs/sandbox.md` | 未开始 |
 | 11 | Provider 抽象与流式 | P1 | `docs/provider-streaming.md` | 未开始 |
