@@ -70,13 +70,46 @@ flowchart TD
 
 ### 追问：能拿一个真实的插件举例吗？
 
-拿内置的磁盘清理插件走一遍。它解决的问题是：agent 干活时会产生一堆临时文件——试运行的测试脚本、跑了一半的输出、定时任务的日志，攒着攒着磁盘就满了。这个插件一共四个文件：一份清单、一个入口文件、一个实现文件、一份说明。清单声明「我叫什么、版本多少、提供两个钩子」；入口文件里的注册函数只做三件事：登记「工具执行后」和「会话结束」两个钩子，再注册一条会话内命令。跑起来的样子：
+拿内置的磁盘清理插件 (disk-cleanup) 走一遍。它解决的问题是：agent 干活时会产生一堆临时文件——试运行的测试脚本、跑了一半的输出、定时任务的日志，攒着攒着磁盘就满了。整个插件四个文件：
+
+```text
+plugins/disk-cleanup/
+├── plugin.yaml      # 清单：我是谁、提供什么
+├── __init__.py      # 入口：注册函数 + 钩子回调 + 斜杠命令
+├── disk_cleanup.py  # 实现：追踪、分类、删除
+└── README.md
+```
+
+清单内容（声明身份和提供的两个钩子，发现时读的就是它）：
+
+```yaml
+name: disk-cleanup
+version: 2.0.0
+description: "Auto-track and clean up ephemeral files (test scripts, temp
+  outputs, cron logs) created during Hermes sessions. Runs via plugin
+  hooks — no agent action required."
+provides_hooks:
+  - post_tool_call
+  - on_session_end
+```
+
+注册函数（入口文件的收尾三句，装载时被调用——这就是「受控注册接口」实际的样子）：
+
+```python
+def register(ctx) -> None:
+    ctx.register_hook("post_tool_call", _on_post_tool_call)
+    ctx.register_hook("on_session_end", _on_session_end)
+    ctx.register_command("disk-cleanup", handler=_handle_slash,
+                         description="Track and clean up ephemeral Hermes session files.")
+```
+
+跑起来的样子：
 
 - 每次工具执行后，它检查这次是不是写文件 (write_file) 或跑终端 (terminal)——是的话从参数和输出里抠出新建文件的路径，分类记档（测试文件、临时文件、下载……）；
 - 会话结束时，发现这一轮真记到过测试文件，就跑一次安全清理；
-- 用户随时敲斜杠命令查状态、预览要删什么、手动清或手动放弃。
+- 用户随时敲 /disk-cleanup 查状态、预览要删什么、手动清或手动放弃。
 
-这个例子的价值在于展示了插件不一定「给模型工具」：它一个工具都没给模型，全靠钩子在旁边默默记录、会话收尾时动手，再给人留一条命令——正好对应上面分类里「截流程的」和「给人用的」两组。对照着看就明白清单、注册函数、注册接口三样东西怎么拼成一个能跑的插件。
+这个例子好在展示了插件不一定「给模型工具」：它一个工具都没给模型，全靠钩子在旁边记录、会话收尾时动手，再给人留一条命令——正好对应上面分类里「截流程的」和「给人用的」两组。
 
 ### 追问：有了插件为什么还要 MCP 和技能？什么时候选哪个？
 
